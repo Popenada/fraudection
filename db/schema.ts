@@ -28,6 +28,7 @@ export const caseDecisionType = pgEnum("case_decision_type", [
   "escalate",
 ]);
 
+// To be wired in the future, analysts will have their own authentication board with a foreign key assigned to them
 export const analysts = pgTable("analysts", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
