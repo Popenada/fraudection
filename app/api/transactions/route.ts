@@ -2,7 +2,8 @@ import { eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { transactions } from "@/db/schema";
+import { auditLog, cases, transactions } from "@/db/schema";
+import { scoreTransaction } from "@/lib/rules-engine";
 
 const transactionEventSchema = z.object({
   externalId: z.string().min(1),
@@ -54,15 +55,42 @@ export async function POST(request: NextRequest) {
     .onConflictDoNothing({ target: transactions.externalId })
     .returning();
 
-  if (inserted) {
-    return NextResponse.json(inserted, { status: 201 });
+  if (!inserted) {
+    const [existing] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.externalId, event.externalId))
+      .limit(1);
+
+    return NextResponse.json(existing, { status: 200 });
   }
 
-  const [existing] = await db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.externalId, event.externalId))
-    .limit(1);
+  const result = await scoreTransaction(inserted);
 
-  return NextResponse.json(existing, { status: 200 });
+  const scored = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(transactions)
+      .set({ status: result.status, riskScore: result.riskScore.toFixed(4), updatedAt: new Date() })
+      .where(eq(transactions.id, inserted.id))
+      .returning();
+
+    await tx.insert(auditLog).values({
+      entityType: "transaction",
+      entityId: inserted.id,
+      action: "auto_scored",
+      actor: "rules-engine",
+      metadata: result,
+    });
+
+    if (result.status === "held" || result.status === "blocked") {
+      await tx.insert(cases).values({
+        transactionId: inserted.id,
+        priority: result.status === "blocked" || result.riskScore >= 0.6 ? "high" : "medium",
+      });
+    }
+
+    return updated;
+  });
+
+  return NextResponse.json(scored, { status: 201 });
 }
