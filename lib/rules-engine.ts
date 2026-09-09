@@ -5,6 +5,7 @@ import { transactions } from "@/db/schema";
 const VELOCITY_WINDOW_MINUTES = 10;
 const VELOCITY_THRESHOLD = 3;
 const HIGH_AMOUNT_THRESHOLD = 2000;
+const GEO_MISMATCH_WEIGHT = 0.35;
 
 // Placeholder blocklist — replace with a real blocklist table once one exists.
 const BLOCKED_BINS = new Set<string>([]);
@@ -46,7 +47,7 @@ export async function scoreTransaction(transaction: Transaction): Promise<Scorin
   if (transaction.customerId) {
     const windowStart = new Date(Date.now() - VELOCITY_WINDOW_MINUTES * 60_000);
     const recent = await db
-      .select({ id: transactions.id })
+      .select({ id: transactions.id, country: transactions.country })
       .from(transactions)
       .where(
         and(
@@ -61,6 +62,19 @@ export async function scoreTransaction(transaction: Transaction): Promise<Scorin
         weight: 0.4,
         detail: `${recent.length} other transactions from this customer in the last ${VELOCITY_WINDOW_MINUTES}m`,
       });
+    }
+
+    if (transaction.country) {
+      const mismatch = recent.find(
+        (row) => row.country && row.country !== transaction.country
+      );
+      if (mismatch) {
+        hits.push({
+          rule: "geo_mismatch",
+          weight: GEO_MISMATCH_WEIGHT,
+          detail: `Customer had a transaction from ${mismatch.country} within the last ${VELOCITY_WINDOW_MINUTES}m, this one is from ${transaction.country}`,
+        });
+      }
     }
   }
 

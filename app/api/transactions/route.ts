@@ -15,6 +15,7 @@ const transactionEventSchema = z.object({
   cardLast4: z.string().optional(),
   ipAddress: z.string().optional(),
   deviceId: z.string().optional(),
+  country: z.string().optional(),
 });
 
 // Payment provider webhook ingestion: validates the event, writes the raw
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
       cardLast4: event.cardLast4,
       ipAddress: event.ipAddress,
       deviceId: event.deviceId,
+      country: event.country,
       rawPayload: body,
     })
     .onConflictDoNothing({ target: transactions.externalId })

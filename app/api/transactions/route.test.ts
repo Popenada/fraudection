@@ -35,6 +35,7 @@ const baseRow = {
   cardLast4: "1111",
   ipAddress: "1.2.3.4",
   deviceId: "device_1",
+  country: "US",
   status: "pending",
   riskScore: null,
   rawPayload: null,

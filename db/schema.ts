@@ -50,6 +50,7 @@ export const transactions = pgTable(
     cardBin: text("card_bin"),
     cardLast4: text("card_last4"),
     ipAddress: text("ip_address"),
+    country: text("country"),
     deviceId: text("device_id"),
     status: transactionStatus("status").notNull().default("pending"),
     riskScore: numeric("risk_score", { precision: 5, scale: 4 }),

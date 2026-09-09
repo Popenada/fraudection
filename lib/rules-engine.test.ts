@@ -24,6 +24,7 @@ function buildTransaction(overrides: Partial<Transaction> = {}): Transaction {
     cardLast4: "1111",
     ipAddress: "1.2.3.4",
     deviceId: "device_1",
+    country: "US",
     status: "pending",
     riskScore: null,
     rawPayload: null,
@@ -34,8 +35,8 @@ function buildTransaction(overrides: Partial<Transaction> = {}): Transaction {
 }
 
 // Configures db.select().from().where() to resolve with the given prior
-// transactions, as used by the velocity rule's query.
-function mockPriorTransactions(rows: { id: string }[]) {
+// transactions, as used by the velocity/geo_mismatch rules' shared query.
+function mockPriorTransactions(rows: { id: string; country?: string | null }[]) {
   (db.select as ReturnType<typeof vi.fn>).mockReturnValue({
     from: () => ({
       where: () => Promise.resolve(rows),
@@ -82,6 +83,40 @@ describe("scoreTransaction", () => {
 
     expect(result.hits.map((h) => h.rule)).not.toContain("velocity");
     expect(result.status).toBe("allowed");
+  });
+
+  it("flags geo_mismatch when a recent transaction from the same customer has a different country", async () => {
+    mockPriorTransactions([{ id: "a", country: "FR" }]);
+
+    const result = await scoreTransaction(buildTransaction({ country: "US" }));
+
+    expect(result.hits.map((h) => h.rule)).toContain("geo_mismatch");
+    expect(result.riskScore).toBeCloseTo(0.35);
+    expect(result.status).toBe("allowed");
+  });
+
+  it("does not flag geo_mismatch when the recent transaction's country matches", async () => {
+    mockPriorTransactions([{ id: "a", country: "US" }]);
+
+    const result = await scoreTransaction(buildTransaction({ country: "US" }));
+
+    expect(result.hits.map((h) => h.rule)).not.toContain("geo_mismatch");
+  });
+
+  it("does not flag geo_mismatch when the transaction has no country", async () => {
+    mockPriorTransactions([{ id: "a", country: "FR" }]);
+
+    const result = await scoreTransaction(buildTransaction({ country: null }));
+
+    expect(result.hits.map((h) => h.rule)).not.toContain("geo_mismatch");
+  });
+
+  it("does not flag geo_mismatch when the prior transaction has no country on record", async () => {
+    mockPriorTransactions([{ id: "a", country: null }]);
+
+    const result = await scoreTransaction(buildTransaction({ country: "US" }));
+
+    expect(result.hits.map((h) => h.rule)).not.toContain("geo_mismatch");
   });
 
   it("skips the velocity query entirely when there is no customerId", async () => {
